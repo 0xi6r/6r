@@ -1,4 +1,6 @@
-# Simple Windows TUI File Editor
+# What if I wrote my own file editor?
+
+## 6r, A Simple Windows TUI File Editor
 
 A lightweight, modular text editor for Windows command line with a terminal user interface (TUI). Built in C with a focus on simplicity, modularity, and ease of use.
 
@@ -15,18 +17,15 @@ A lightweight, modular text editor for Windows command line with a terminal user
 ## Requirements
 
 - **Windows OS** (uses Windows Console API)
-- **GCC compiler** (MinGW or similar)
-- **GNU Make** (optional - batch script alternative provided)
-
-## Installation
-
-### Option 1: Using Makefile (Linux/WSL/MinGW)
+- **Batch script**
+- 
+## Build Using build.bat
 ```bash
-make          # Build
-make run      # Build and run
-make clean    # Clean artifacts
 
-## Option 2: Using build.bat
 build.bat run      # Fastest way to test
 build.bat clean    # Clean up before git commit
 build.bat rebuild  # Force recompile everything
+```
+
+this is just a simple implemtation, things are breaking and I'll look into them later.
+feel free to contribute, no strings attached.
