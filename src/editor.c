@@ -1,141 +1,106 @@
 #include "editor.h"
-#include <stdlib.h>
-#include <string.h>
+#include <stdio.h>
 
-Editor* editor_create(void) {
-    Editor *editor = (Editor*)malloc(sizeof(Editor));
-    if (!editor) return NULL;
-    
-    editor_new(editor);
-    return editor;
+void editor_init(Editor* editor) {
+    editor->buffer = buffer_create();
+    tui_init(&editor->tui);
+    editor->running = 1;
 }
 
-void editor_destroy(Editor *editor) {
-    if (editor) {
-        free(editor);
+void editor_show_help() {
+    system("cls");
+    printf("6r - Simple TUI Editor - Help\n");
+    printf("============================\n");
+    printf("Navigation:\n");
+    printf("  Arrow Keys    Move cursor\n");
+    printf("  Home/End      Beginning/End of line\n");
+    printf("  Page Up/Down  Scroll page\n");
+    printf("\nEditing:\n");
+    printf("  Type          Insert text\n");
+    printf("  Backspace     Delete character\n");
+    printf("  Enter         New line\n");
+    printf("\nCommands:\n");
+    printf("  Ctrl+S        Save file\n");
+    printf("  Ctrl+O        Open file\n");
+    printf("  Ctrl+N        New file\n");
+    printf("  Ctrl+Q        Quit\n");
+    printf("  F1            This help\n");
+    printf("\nPress any key to return to editor...");
+    getchar();
+}
+
+void editor_run(Editor* editor) {
+    KeyEvent event;
+    
+    // Check for filename argument
+    if (__argc > 1) {
+        file_open(editor->buffer, __argv[1]);
+    }
+    
+    while (editor->running) {
+        tui_handle_resize(&editor->tui);
+        tui_draw(&editor->tui, editor->buffer);
+        
+        if (input_get_key(&event)) {
+            if (event.ctrl) {
+                switch (event.key) {
+                    case 's':  // Ctrl+S
+                    case 'S':
+                        if (editor->buffer->filename[0]) {
+                            file_save(editor->buffer, editor->buffer->filename);
+                        } else {
+                            // Temporarily exit TUI for file dialog
+                            tui_cleanup(&editor->tui);
+                            file_save_as(editor->buffer);
+                            tui_init(&editor->tui);
+                        }
+                        break;
+                    case 'o':  // Ctrl+O
+                    case 'O':
+                        tui_cleanup(&editor->tui);
+                        char filename[256];
+                        printf("Open file: ");
+                        if (scanf("%255s", filename) == 1) {
+                            file_open(editor->buffer, filename);
+                        }
+                        tui_init(&editor->tui);
+                        break;
+                    case 'n':  // Ctrl+N
+                    case 'N':
+                        tui_cleanup(&editor->tui);
+                        file_new(editor->buffer);
+                        tui_init(&editor->tui);
+                        break;
+                    case 'q':  // Ctrl+Q
+                    case 'Q':
+                        if (editor->buffer->modified) {
+                            tui_cleanup(&editor->tui);
+                            printf("Save changes before quitting? (y/n): ");
+                            char ch = getchar();
+                            if (ch == 'y' || ch == 'Y') {
+                                if (editor->buffer->filename[0]) {
+                                    file_save(editor->buffer, editor->buffer->filename);
+                                } else {
+                                    file_save_as(editor->buffer);
+                                }
+                            }
+                            tui_init(&editor->tui);
+                        }
+                        editor->running = 0;
+                        break;
+                }
+            } else if (event.key == KEY_F1) {
+                tui_cleanup(&editor->tui);
+                editor_show_help();
+                tui_init(&editor->tui);
+            } else {
+                input_handle_key(&editor->tui, editor->buffer, event);
+            }
+        }
     }
 }
 
-void editor_new(Editor *editor) {
-    strcpy(editor->filename, "untitled.txt");
-    editor->line_count = 1;
-    strcpy(editor->lines[0], "");
-    editor->cursor_line = 0;
-    editor->cursor_col = 0;
-    editor->modified = 0;
-    editor->scroll_offset = 0;
-}
-
-void editor_insert_char(Editor *editor, char c) {
-    if (editor->line_count >= MAX_LINES) return;
-    
-    int line_len = strlen(editor->lines[editor->cursor_line]);
-    if (line_len >= MAX_LINE_LENGTH - 1) return;
-    
-    // Shift characters to the right
-    for (int i = line_len; i > editor->cursor_col; i--) {
-        editor->lines[editor->cursor_line][i] = editor->lines[editor->cursor_line][i - 1];
-    }
-    
-    editor->lines[editor->cursor_line][editor->cursor_col] = c;
-    editor->cursor_col++;
-    editor->modified = 1;
-}
-
-void editor_delete_char(Editor *editor) {
-    int line_len = strlen(editor->lines[editor->cursor_line]);
-    if (editor->cursor_col >= line_len) return;
-    
-    for (int i = editor->cursor_col; i < line_len; i++) {
-        editor->lines[editor->cursor_line][i] = editor->lines[editor->cursor_line][i + 1];
-    }
-    editor->modified = 1;
-}
-
-void editor_backspace(Editor *editor) {
-    if (editor->cursor_col > 0) {
-        editor->cursor_col--;
-        editor_delete_char(editor);
-    }
-}
-
-void editor_new_line(Editor *editor) {
-    if (editor->line_count >= MAX_LINES) return;
-    
-    // Shift lines down
-    for (int i = editor->line_count; i > editor->cursor_line; i--) {
-        strcpy(editor->lines[i], editor->lines[i - 1]);
-    }
-    
-    // Split current line
-    strcpy(editor->lines[editor->cursor_line + 1], 
-           &editor->lines[editor->cursor_line][editor->cursor_col]);
-    editor->lines[editor->cursor_line][editor->cursor_col] = '\0';
-    
-    editor->cursor_line++;
-    editor->cursor_col = 0;
-    editor->line_count++;
-    editor->modified = 1;
-}
-
-void editor_move_cursor(Editor *editor, int dx, int dy) {
-    editor->cursor_col += dx;
-    editor->cursor_line += dy;
-    
-    // Bounds checking
-    if (editor->cursor_line < 0) editor->cursor_line = 0;
-    if (editor->cursor_line >= editor->line_count) 
-        editor->cursor_line = editor->line_count - 1;
-    
-    int line_len = strlen(editor->lines[editor->cursor_line]);
-    if (editor->cursor_col < 0) editor->cursor_col = 0;
-    if (editor->cursor_col > line_len) editor->cursor_col = line_len;
-}
-
-void editor_move_to_line_start(Editor *editor) {
-    editor->cursor_col = 0;
-}
-
-void editor_move_to_line_end(Editor *editor) {
-    editor->cursor_col = strlen(editor->lines[editor->cursor_line]);
-}
-
-void editor_move_page_up(Editor *editor) {
-    editor->scroll_offset -= 10;
-    if (editor->scroll_offset < 0) editor->scroll_offset = 0;
-}
-
-void editor_move_page_down(Editor *editor) {
-    editor->scroll_offset += 10;
-    if (editor->scroll_offset > editor->line_count - 1)
-        editor->scroll_offset = editor->line_count - 1;
-}
-
-int editor_get_line_count(const Editor *editor) {
-    return editor->line_count;
-}
-
-const char* editor_get_line(const Editor *editor, int line_num) {
-    if (line_num < 0 || line_num >= editor->line_count) return "";
-    return editor->lines[line_num];
-}
-
-const char* editor_get_filename(const Editor *editor) {
-    return editor->filename;
-}
-
-int editor_is_modified(const Editor *editor) {
-    return editor->modified;
-}
-
-int editor_get_cursor_line(const Editor *editor) {
-    return editor->cursor_line;
-}
-
-int editor_get_cursor_col(const Editor *editor) {
-    return editor->cursor_col;
-}
-
-int editor_get_scroll_offset(const Editor *editor) {
-    return editor->scroll_offset;
+void editor_cleanup(Editor* editor) {
+    tui_cleanup(&editor->tui);
+    buffer_destroy(editor->buffer);
 }
