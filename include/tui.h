@@ -1,15 +1,8 @@
 #ifndef TUI_H
 #define TUI_H
 
-#include <windows.h>
+#include "platform.h"
 #include "buffer.h"
-
-#define COLOR_BLACK 0
-#define COLOR_WHITE 15
-#define COLOR_BLUE 1
-#define COLOR_GREEN 10
-#define COLOR_RED 4
-#define COLOR_YELLOW 14
 
 typedef struct {
     int rows;
@@ -20,8 +13,12 @@ typedef struct {
     int offset_y;
     int status_height;
     int line_num_width;
-    HANDLE stdout_handle;
-    CONSOLE_SCREEN_BUFFER_INFO original_info;
+    int cursor_line;
+    int cursor_col;
+    PlatformHandle stdout_handle;
+#ifdef PLATFORM_WINDOWS
+    ConsoleInfo original_info;
+#endif
 } TUIState;
 
 void tui_init(TUIState* tui);

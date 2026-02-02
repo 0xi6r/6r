@@ -1,76 +1,45 @@
 #include "display.h"
 #include <stdio.h>
 #include <string.h>
-#include <windows.h>
 
-static HANDLE hConsoleOutput = NULL;
-static CONSOLE_SCREEN_BUFFER_INFO csbi;
 static int last_cursor_line = -1;
 static int last_cursor_col = -1;
 
 void display_init(void) {
-    hConsoleOutput = GetStdHandle(STD_OUTPUT_HANDLE);
-    
-    // Set console mode for better performance
-    DWORD dwMode = 0;
-    GetConsoleMode(hConsoleOutput, &dwMode);
-    dwMode |= ENABLE_PROCESSED_OUTPUT;
-    SetConsoleMode(hConsoleOutput, dwMode);
-    
+    platform_init_terminal();
     // Hide cursor during rendering
     display_hide_cursor();
 }
 
 void display_cleanup(void) {
     display_show_cursor();
+    platform_cleanup_terminal();
 }
 
 void display_clear_screen(void) {
-    COORD coordScreen = { 0, 0 };
-    DWORD cCharsWritten = 0;
-    DWORD dwConSize;
-    
-    GetConsoleScreenBufferInfo(hConsoleOutput, &csbi);
-    dwConSize = csbi.dwSize.X * csbi.dwSize.Y;
-    
-    FillConsoleOutputCharacter(hConsoleOutput, (TCHAR)' ', dwConSize, coordScreen, &cCharsWritten);
-    FillConsoleOutputAttribute(hConsoleOutput, csbi.wAttributes, dwConSize, coordScreen, &cCharsWritten);
-    
-    SetConsoleCursorPosition(hConsoleOutput, coordScreen);
+    platform_clear_screen();
 }
 
 void display_set_cursor_position(int x, int y) {
-    COORD coord;
-    coord.X = x;
-    coord.Y = y;
-    SetConsoleCursorPosition(hConsoleOutput, coord);
+    platform_set_cursor_position(x, y);
 }
 
 ScreenSize display_get_screen_size(void) {
-    GetConsoleScreenBufferInfo(hConsoleOutput, &csbi);
-    
     ScreenSize size;
-    size.width = csbi.srWindow.Right - csbi.srWindow.Left + 1;
-    size.height = csbi.srWindow.Bottom - csbi.srWindow.Top + 1;
+    platform_get_console_size(&size.height, &size.width);
     return size;
 }
 
 void display_show_cursor(void) {
-    CONSOLE_CURSOR_INFO cursorInfo;
-    GetConsoleCursorInfo(hConsoleOutput, &cursorInfo);
-    cursorInfo.bVisible = TRUE;
-    SetConsoleCursorInfo(hConsoleOutput, &cursorInfo);
+    platform_show_cursor();
 }
 
 void display_hide_cursor(void) {
-    CONSOLE_CURSOR_INFO cursorInfo;
-    GetConsoleCursorInfo(hConsoleOutput, &cursorInfo);
-    cursorInfo.bVisible = FALSE;
-    SetConsoleCursorInfo(hConsoleOutput, &cursorInfo);
+    platform_hide_cursor();
 }
 
 void display_flush(void) {
-    FlushConsoleInputBuffer(hConsoleOutput);
+    fflush(stdout);
 }
 
 void display_show_status_bar(const Editor *editor) {
@@ -86,14 +55,16 @@ void display_show_status_bar(const Editor *editor) {
              editor_get_cursor_col(editor) + 1,
              editor_is_modified(editor) ? "[MODIFIED]" : "");
     
+    // Set background color for status bar
+    platform_set_color(COLOR_BLACK, COLOR_WHITE);
+    printf("%s", status);
+    
     // Pad to screen width
     int padding = screen.width - strlen(status);
     if (padding < 0) padding = 0;
-    
-    // Set background color for status bar
-    printf("\033[7m%s", status);
     for (int i = 0; i < padding; i++) printf(" ");
-    printf("\033[0m");
+    
+    platform_reset_color();
 }
 
 void display_render_editor(const Editor *editor) {
@@ -142,14 +113,14 @@ void display_show_help(void) {
     printf("  Ctrl+Q        - Quit\n\n");
     printf("Press any key to continue...");
     fflush(stdout);
-    _getch();
+    getchar();
 }
 
 void display_show_message(const char *message, int wait_for_key) {
     printf("%s", message);
     fflush(stdout);
     if (wait_for_key) {
-        _getch();
+        getchar();
     }
 }
 

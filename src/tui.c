@@ -3,14 +3,9 @@
 #include <string.h>
 
 void tui_init(TUIState* tui) {
-    tui->stdout_handle = GetStdHandle(STD_OUTPUT_HANDLE);
-    GetConsoleScreenBufferInfo(tui->stdout_handle, &tui->original_info);
+    platform_init_terminal();
     
-    CONSOLE_SCREEN_BUFFER_INFO csbi;
-    GetConsoleScreenBufferInfo(tui->stdout_handle, &csbi);
-    
-    tui->cols = csbi.srWindow.Right - csbi.srWindow.Left + 1;
-    tui->rows = csbi.srWindow.Bottom - csbi.srWindow.Top + 1;
+    platform_get_console_size(&tui->rows, &tui->cols);
     tui->status_height = 2;
     tui->cursor_x = 0;
     tui->cursor_y = 0;
@@ -18,49 +13,43 @@ void tui_init(TUIState* tui) {
     tui->offset_y = 0;
     tui->line_num_width = 6;
     
-    // Hide cursor initially
-    CONSOLE_CURSOR_INFO cursorInfo;
-    GetConsoleCursorInfo(tui->stdout_handle, &cursorInfo);
-    cursorInfo.bVisible = FALSE;
-    SetConsoleCursorInfo(tui->stdout_handle, &cursorInfo);
+#ifdef PLATFORM_WINDOWS
+    tui->stdout_handle = GetStdHandle(STD_OUTPUT_HANDLE);
+    GetConsoleScreenBufferInfo(tui->stdout_handle, &tui->original_info);
+#endif
     
-    // Set console mode for input
-    HANDLE stdin_handle = GetStdHandle(STD_INPUT_HANDLE);
-    DWORD mode = 0;
-    GetConsoleMode(stdin_handle, &mode);
-    SetConsoleMode(stdin_handle, mode & ~(ENABLE_ECHO_INPUT | ENABLE_LINE_INPUT));
+    // Hide cursor initially
+    platform_hide_cursor();
+    
+    // Set raw mode for input
+    platform_set_raw_mode(1);
 }
 
 void tui_cleanup(TUIState* tui) {
     // Restore original console state
+#ifdef PLATFORM_WINDOWS
     SetConsoleTextAttribute(tui->stdout_handle, tui->original_info.wAttributes);
-    
-    CONSOLE_CURSOR_INFO cursorInfo;
-    GetConsoleCursorInfo(tui->stdout_handle, &cursorInfo);
-    cursorInfo.bVisible = TRUE;
-    SetConsoleCursorInfo(tui->stdout_handle, &cursorInfo);
-    
-    tui_clear_screen();
-    SetConsoleCursorPosition(tui->stdout_handle, tui->original_info.dwCursorPosition);
+#endif
+    platform_show_cursor();
+    platform_set_raw_mode(0);
+    platform_reset_color();
+    platform_clear_screen();
 }
 
 void tui_clear_screen() {
-    system("cls");
+    platform_clear_screen();
 }
 
 void tui_set_color(int foreground, int background) {
-    SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), 
-                          foreground | (background << 4));
+    platform_set_color(foreground, background);
 }
 
 void tui_reset_color() {
-    SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), 
-                          7 | (0 << 4));  // Default white on black
+    platform_reset_color();
 }
 
 void tui_draw(TUIState* tui, TextBuffer* buffer) {
-    COORD coord = {0, 0};
-    SetConsoleCursorPosition(tui->stdout_handle, coord);
+    platform_set_cursor_position(0, 0);
     
     int max_display_lines = tui_get_max_display_lines(tui);
     int start_line = tui->offset_y;
@@ -72,9 +61,7 @@ void tui_draw(TUIState* tui, TextBuffer* buffer) {
     
     // Draw text area
     for (int i = start_line; i < end_line; i++) {
-        coord.Y = i - start_line;
-        coord.X = 0;
-        SetConsoleCursorPosition(tui->stdout_handle, coord);
+        platform_set_cursor_position(0, i - start_line);
         
         // Draw line numbers
         tui_set_color(COLOR_YELLOW, COLOR_BLACK);
@@ -107,9 +94,7 @@ void tui_draw(TUIState* tui, TextBuffer* buffer) {
     
     // Clear remaining lines
     for (int i = end_line - start_line; i < max_display_lines; i++) {
-        coord.Y = i;
-        coord.X = 0;
-        SetConsoleCursorPosition(tui->stdout_handle, coord);
+        platform_set_cursor_position(0, i);
         for (int j = 0; j < tui->cols; j++) {
             putchar(' ');
         }
@@ -121,18 +106,15 @@ void tui_draw(TUIState* tui, TextBuffer* buffer) {
 
 void tui_draw_status(TUIState* tui, TextBuffer* buffer) {
     int max_display_lines = tui_get_max_display_lines(tui);
-    COORD coord = {0, max_display_lines};
-    SetConsoleCursorPosition(tui->stdout_handle, coord);
+    platform_set_cursor_position(0, max_display_lines);
     
     // Status bar background
-    tui_set_color(COLOR_BLACK, COLOR_WHITE);
+    tui_set_color(COLOR_WHITE, COLOR_BLACK);
     for (int i = 0; i < tui->cols; i++) {
         putchar(' ');
     }
     
-    coord.Y = max_display_lines;
-    coord.X = 0;
-    SetConsoleCursorPosition(tui->stdout_handle, coord);
+    platform_set_cursor_position(0, max_display_lines);
     
     // File info
     char status[256];
@@ -142,23 +124,18 @@ void tui_draw_status(TUIState* tui, TextBuffer* buffer) {
     printf("%-30.30s", status);
     
     // Cursor position
-    coord.X = tui->cols - 20;
-    SetConsoleCursorPosition(tui->stdout_handle, coord);
+    platform_set_cursor_position(tui->cols - 20, max_display_lines);
     printf("Ln %d, Col %d", tui->cursor_y + 1, tui->cursor_x + 1);
     
     // Second status line
-    coord.Y = max_display_lines + 1;
-    coord.X = 0;
-    SetConsoleCursorPosition(tui->stdout_handle, coord);
+    platform_set_cursor_position(0, max_display_lines + 1);
     
     tui_set_color(COLOR_BLACK, COLOR_BLUE);
     for (int i = 0; i < tui->cols; i++) {
         putchar(' ');
     }
     
-    coord.Y = max_display_lines + 1;
-    coord.X = 0;
-    SetConsoleCursorPosition(tui->stdout_handle, coord);
+    platform_set_cursor_position(0, max_display_lines + 1);
     
     printf(" ^S:Save  ^O:Open  ^N:New  ^Q:Quit  F1:Help");
     
@@ -167,12 +144,12 @@ void tui_draw_status(TUIState* tui, TextBuffer* buffer) {
 
 void tui_update_cursor(TUIState* tui) {
     int max_display_lines = tui_get_max_display_lines(tui);
-    COORD coord;
-    coord.X = tui->cursor_x - tui->offset_x + tui->line_num_width;
-    coord.Y = tui->cursor_y - tui->offset_y;
+    int x = tui->cursor_x - tui->offset_x + tui->line_num_width;
+    int y = tui->cursor_y - tui->offset_y;
     
-    if (coord.Y >= 0 && coord.Y < max_display_lines) {
-        SetConsoleCursorPosition(tui->stdout_handle, coord);
+    if (y >= 0 && y < max_display_lines) {
+        platform_show_cursor();
+        platform_set_cursor_position(x, y);
     }
 }
 
@@ -181,11 +158,8 @@ int tui_get_max_display_lines(TUIState* tui) {
 }
 
 void tui_handle_resize(TUIState* tui) {
-    CONSOLE_SCREEN_BUFFER_INFO csbi;
-    GetConsoleScreenBufferInfo(tui->stdout_handle, &csbi);
-    
-    int new_cols = csbi.srWindow.Right - csbi.srWindow.Left + 1;
-    int new_rows = csbi.srWindow.Bottom - csbi.srWindow.Top + 1;
+    int new_cols, new_rows;
+    platform_get_console_size(&new_rows, &new_cols);
     
     if (new_cols != tui->cols || new_rows != tui->rows) {
         tui->cols = new_cols;

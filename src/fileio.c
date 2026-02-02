@@ -1,7 +1,8 @@
 #include "fileio.h"
+#include "platform.h"
 #include <stdio.h>
 #include <string.h>
-#include <windows.h>
+#include <stdlib.h>
 
 int file_save(TextBuffer* buffer, const char* filename) {
     FILE* file = fopen(filename, "w");
@@ -102,7 +103,7 @@ int file_new(TextBuffer* buffer) {
 
 void file_show_message(const char* message) {
     // Simple message display
-    system("cls");
+    platform_clear_screen();
     printf("%s\nPress any key to continue...", message);
     getchar();
 }

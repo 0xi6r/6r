@@ -1,62 +1,38 @@
 #include "input.h"
+#include "platform.h"
 #include <stdio.h>
-#include <windows.h>
 
 int input_get_key(KeyEvent* event) {
-    INPUT_RECORD input_record;
-    DWORD events_read;
-    
-    while (1) {
-        ReadConsoleInput(GetStdHandle(STD_INPUT_HANDLE), &input_record, 1, &events_read);
-        
-        if (input_record.EventType == KEY_EVENT && input_record.Event.KeyEvent.bKeyDown) {
-            event->key = input_record.Event.KeyEvent.wVirtualKeyCode;
-            event->ctrl = (input_record.Event.KeyEvent.dwControlKeyState & (LEFT_CTRL_PRESSED | RIGHT_CTRL_PRESSED)) != 0;
-            event->alt = (input_record.Event.KeyEvent.dwControlKeyState & (LEFT_ALT_PRESSED | RIGHT_ALT_PRESSED)) != 0;
-            event->shift = (input_record.Event.KeyEvent.dwControlKeyState & SHIFT_PRESSED) != 0;
-            
-            // For printable characters, also get the actual character
-            if (event->key >= 0x30 && event->key <= 0x5A) {
-                event->key = input_record.Event.KeyEvent.uChar.AsciiChar;
-                if (event->key == 0) {
-                    continue;  // Skip non-character keys
-                }
-            }
-            
-            return 1;
-        }
-    }
-    
-    return 0;
+    return platform_get_key(event);
 }
 
 void input_handle_key(TUIState* tui, TextBuffer* buffer, KeyEvent event) {
     switch (event.key) {
-        case VK_UP:
+        case KEY_UP:
             input_move_cursor(tui, buffer, 0, -1);
             break;
-        case VK_DOWN:
+        case KEY_DOWN:
             input_move_cursor(tui, buffer, 0, 1);
             break;
-        case VK_LEFT:
+        case KEY_LEFT:
             input_move_cursor(tui, buffer, -1, 0);
             break;
-        case VK_RIGHT:
+        case KEY_RIGHT:
             input_move_cursor(tui, buffer, 1, 0);
             break;
-        case VK_HOME:
+        case KEY_HOME:
             tui->cursor_x = 0;
             break;
-        case VK_END: {
+        case KEY_END: {
             char* line = buffer_get_line(buffer, tui->cursor_y);
             tui->cursor_x = line ? strlen(line) : 0;
             break;
         }
-        case VK_PRIOR:  // Page Up
+        case KEY_PAGE_UP:
             tui->cursor_y -= tui_get_max_display_lines(tui);
             if (tui->cursor_y < 0) tui->cursor_y = 0;
             break;
-        case VK_NEXT:   // Page Down
+        case KEY_PAGE_DOWN:
             tui->cursor_y += tui_get_max_display_lines(tui);
             if (tui->cursor_y >= buffer->line_count) {
                 tui->cursor_y = buffer->line_count - 1;
@@ -89,6 +65,9 @@ void input_handle_key(TUIState* tui, TextBuffer* buffer, KeyEvent event) {
                     }
                 }
             }
+            break;
+        case KEY_DELETE:
+            input_delete_char(tui, buffer);
             break;
         case KEY_ENTER: {
             char* line = buffer_get_line(buffer, tui->cursor_y);
